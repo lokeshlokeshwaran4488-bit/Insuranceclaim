@@ -1,3 +1,4 @@
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -43,6 +44,20 @@ async def list_policies(
     policies = result.scalars().all()
 
     return PolicyListResponse(policies=policies, total=total, page=page, page_size=page_size)
+
+
+@router.get("/my-policies", response_model=List[PolicyOut])
+async def get_my_policies(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Customer: Get list of owned policies."""
+    result = await db.execute(
+        select(Policy)
+        .where(Policy.customer_id == current_user.id)
+        .order_by(Policy.created_at.desc())
+    )
+    return result.scalars().all()
 
 
 @router.get("/{policy_id}", response_model=PolicyOut)
@@ -133,13 +148,16 @@ async def delete_policy(
     """Admin: Delete a policy (only if no claims exist)."""
     result = await db.execute(select(Policy).where(Policy.id == policy_id))
     policy = result.scalar_one_or_none()
-    if not policy:
-        raise HTTPException(status_code=404, detail="Policy not found")
-
-    if policy.claims:
+    # Verify no claims are attached to this policy
+    from app.models.claim import Claim
+    claim_count_res = await db.execute(
+        select(func.count(Claim.id)).where(Claim.policy_id == policy_id)
+    )
+    claims_count = claim_count_res.scalar() or 0
+    if claims_count > 0:
         raise HTTPException(
             status_code=400,
-            detail="Cannot delete a policy with existing claims",
+            detail=f"Cannot delete policy with {claims_count} existing claim(s)",
         )
 
     await db.delete(policy)

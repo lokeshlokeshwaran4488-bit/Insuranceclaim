@@ -30,6 +30,17 @@ class Settings(BaseSettings):
     MONGO_PORT: int = 27017
     MONGO_DB: str = "insurance_claims_docs"
     MONGO_URL: str = "mongodb://localhost:27017"
+    MONGODB_URI: str | None = None
+    MONGODB_DATABASE: str | None = None
+    MONGODB_TIMEOUT_MS: int = 5000
+
+    @property
+    def mongodb_connection_url(self) -> str:
+        return self.MONGODB_URI or self.MONGO_URL
+
+    @property
+    def mongodb_database_name(self) -> str:
+        return self.MONGODB_DATABASE or self.MONGO_DB
 
     # AES Encryption
     AES_ENCRYPTION_KEY: str = "your-aes-256-key-exactly-32-bytes=="

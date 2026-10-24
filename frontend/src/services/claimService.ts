@@ -94,8 +94,18 @@ export const claimService = {
     return res.data;
   },
 
+  async runAiAssessment(claimId: string): Promise<any> {
+    const res = await api.post<any>('/api/ai/claim-summary', { claim_id: claimId });
+    return res.data;
+  },
+
   async getFraudScore(claimId: string): Promise<any> {
     const res = await api.get<any>(`/api/claims/${claimId}/fraud-score`);
+    return res.data;
+  },
+
+  async recalculateRiskScore(claimId: string): Promise<any> {
+    const res = await api.post<any>('/api/ai/fraud-score', { claim_id: claimId });
     return res.data;
   },
 

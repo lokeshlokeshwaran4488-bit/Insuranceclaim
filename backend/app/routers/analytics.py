@@ -130,13 +130,25 @@ async def get_claims_analytics(
         await db.execute(select(func.count(Claim.id)).where(Claim.status == "REJECTED"))
     ).scalar() or 0
 
+    # Real Turnaround calculation from completed claims
+    completed_q = select(Claim.created_at, Claim.updated_at).where(
+        Claim.status.in_(["APPROVED", "SETTLED", "CLOSED", "REJECTED"])
+    )
+    completed_rows = (await db.execute(completed_q)).all()
+    durations = [
+        (c_up - c_cr).total_seconds() / 86400.0
+        for c_cr, c_up in completed_rows
+        if c_cr and c_up and c_up > c_cr
+    ]
+    actual_avg_days = round(sum(durations) / len(durations), 1) if durations else 0.0
+
     return ClaimsAnalytics(
         claims_by_month=by_month,
         claims_by_type=by_type,
         claims_by_status=by_status,
         approval_rate=round((approved / total) * 100, 1),
         rejection_rate=round((rejected / total) * 100, 1),
-        avg_processing_days=3.5,  # Placeholder; compute from timeline in production
+        avg_processing_days=actual_avg_days,
     )
 
 

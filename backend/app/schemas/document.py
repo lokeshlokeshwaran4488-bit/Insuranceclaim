@@ -18,6 +18,7 @@ class DocumentOut(BaseModel):
     verified_by: Optional[str]
     verified_at: Optional[datetime]
     rejection_reason: Optional[str]
+    content_hash: Optional[str] = None
 
 
 class DocumentVerifyRequest(BaseModel):

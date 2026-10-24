@@ -80,8 +80,13 @@ async def get_claim_summary(
         "requested_by": current_user.id,
     })
 
+    summary["claim_id"] = payload.claim_id
+    summary["summary"] = summary.get("data", {}).get("incident_summary", "")
     logger.info(f"AI claim summary generated for claim={payload.claim_id} by user={current_user.id}")
     return summary
+
+
+from app.services.risk_service import evaluate_claim_risk
 
 
 @router.post("/fraud-score")
@@ -91,14 +96,9 @@ async def get_fraud_score(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Officer/Admin: Get XGBoost fraud risk score for a claim.
-    Result is a recommendation — human makes the final decision.
-
-    Risk levels:
-    - 0.00–0.25: LOW → Auto-process
-    - 0.26–0.50: MODERATE → Standard review
-    - 0.51–0.75: HIGH → Manual review required
-    - 0.76–1.00: VERY HIGH → Fraud investigation
+    Officer/Admin: Evaluate transparent risk indicators and preliminary score for a claim.
+    Multi-point evaluation checks duplicates, document hashes, date consistency, and coverage.
+    Result is advisory decision support — human makes the final claim decision.
     """
     from sqlalchemy.orm import selectinload
 
@@ -111,40 +111,53 @@ async def get_fraud_score(
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found")
 
-    # Count previous claims by this customer
-    claims_count_result = await db.execute(
-        select(func.count(Claim.id)).where(Claim.customer_id == claim.customer_id)
-    )
-    customer_claims_count = (claims_count_result.scalar() or 1) - 1  # Exclude current
+    # Evaluate transparent risk indicators
+    risk_assessment = await evaluate_claim_risk(db, claim, claim.policy)
 
-    # Prepare features
-    features = prepare_claim_features(claim, claim.policy, customer_claims_count)
-
-    # Compute score
-    fraud_result = compute_fraud_score(features)
-
-    # Update claim record with fraud score
-    claim.fraud_score = fraud_result["fraud_probability"]
-    claim.risk_level = fraud_result["risk_level"]
+    # Update claim record with risk level and probability
+    claim.fraud_score = risk_assessment["fraud_probability"]
+    claim.risk_level = risk_assessment["risk_level"]
     await db.commit()
+    await db.refresh(claim)
 
-    # Store in MongoDB
-    mongo_db = get_mongo_db()
-    await mongo_db["ai_analysis"].insert_one({
-        "claim_id": payload.claim_id,
-        "analysis_type": "FRAUD_SCORE",
-        "model_version": fraud_result.get("model_version"),
-        "input_data": features,
-        "output_data": fraud_result,
-        "created_at": datetime.now(timezone.utc),
-        "requested_by": current_user.id,
-    })
+    risk_assessment["fraud_score"] = risk_assessment["fraud_probability"]
+    risk_assessment["indicators"] = risk_assessment["indicators_triggered"]
+    risk_assessment["model"] = risk_assessment["label"]
 
     logger.info(
-        f"Fraud score computed for claim={payload.claim_id}: "
-        f"probability={fraud_result['fraud_probability']} risk={fraud_result['risk_level']}"
+        f"Claim risk evaluated for claim={payload.claim_id}: "
+        f"probability={risk_assessment['fraud_probability']} level={risk_assessment['risk_level']}"
     )
-    return fraud_result
+    return risk_assessment
+
+
+@router.get("/fraud-score/{claim_id}")
+async def get_fraud_score_get(
+    claim_id: str,
+    current_user: User = Depends(get_officer),
+    db: AsyncSession = Depends(get_db),
+):
+    """GET endpoint alias for retrieving/calculating claim fraud risk score."""
+    from sqlalchemy.orm import selectinload
+
+    result = await db.execute(
+        select(Claim)
+        .options(selectinload(Claim.policy), selectinload(Claim.customer))
+        .where(Claim.id == claim_id)
+    )
+    claim = result.scalar_one_or_none()
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    risk_assessment = await evaluate_claim_risk(db, claim, claim.policy)
+    claim.fraud_score = risk_assessment["fraud_probability"]
+    claim.risk_level = risk_assessment["risk_level"]
+    await db.commit()
+
+    risk_assessment["fraud_score"] = risk_assessment["fraud_probability"]
+    risk_assessment["indicators"] = risk_assessment["indicators_triggered"]
+    risk_assessment["model"] = risk_assessment["label"]
+    return risk_assessment
 
 
 @router.post("/document-analysis")

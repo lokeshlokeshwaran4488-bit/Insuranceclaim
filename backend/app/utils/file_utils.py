@@ -18,8 +18,32 @@ ALLOWED_MIME_TYPES = {
 }
 
 
-def validate_file(file: UploadFile) -> None:
-    """Validate file type and MIME type."""
+import hashlib
+
+MAGIC_BYTE_SIGNATURES = {
+    "pdf": [b"%PDF"],
+    "jpg": [b"\xff\xd8\xff"],
+    "jpeg": [b"\xff\xd8\xff"],
+    "png": [b"\x89PNG\r\n\x1a\n"],
+}
+
+
+def validate_file_content(content: bytes, ext: str) -> None:
+    """Validate magic bytes against expected file signatures."""
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    signatures = MAGIC_BYTE_SIGNATURES.get(ext.lower())
+    if signatures:
+        if not any(content.startswith(sig) for sig in signatures):
+            raise HTTPException(
+                status_code=400,
+                detail=f"File content does not match the declared extension '.{ext}'. Executable or malformed uploads are prohibited.",
+            )
+
+
+def validate_file(file: UploadFile) -> str:
+    """Validate file type, MIME type, and return normalized extension."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="File name is required")
 
@@ -35,27 +59,20 @@ def validate_file(file: UploadFile) -> None:
             status_code=400,
             detail=f"MIME type '{file.content_type}' not allowed",
         )
+    return ext
 
 
 async def save_upload_file(
     file: UploadFile,
     claim_id: str,
     category: str,
-) -> tuple[str, int, str]:
+) -> tuple[str, int, str, str]:
     """
     Save an uploaded file to the uploads directory.
-    Returns: (file_path, file_size, safe_filename)
+    Validates magic bytes, enforces path traversal security, and calculates SHA-256 hash.
+    Returns: (file_path, file_size, safe_filename, content_hash)
     """
-    validate_file(file)
-
-    # Create directory
-    upload_dir = Path(settings.UPLOAD_DIR) / "claims" / claim_id
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
-    # Generate safe filename
-    ext = Path(file.filename).suffix.lower()
-    safe_name = f"{uuid.uuid4()}{ext}"
-    file_path = upload_dir / safe_name
+    ext = validate_file(file)
 
     # Read and validate size
     content = await file.read()
@@ -65,12 +82,34 @@ async def save_upload_file(
             detail=f"File size exceeds {settings.MAX_FILE_SIZE_MB}MB limit",
         )
 
+    # Validate file magic bytes
+    validate_file_content(content, ext)
+
+    # Compute SHA-256 hash
+    content_hash = hashlib.sha256(content).hexdigest()
+
+    # Create directory with path traversal protection
+    base_upload_dir = Path(settings.UPLOAD_DIR).resolve()
+    # Sanitize claim_id to alphanumeric/dash only
+    safe_claim_dir = "".join(c for c in claim_id if c.isalnum() or c in "-_")
+    upload_dir = (base_upload_dir / "claims" / safe_claim_dir).resolve()
+
+    # Ensure upload directory is strictly inside base upload directory
+    if not str(upload_dir).startswith(str(base_upload_dir)):
+        raise HTTPException(status_code=400, detail="Invalid path traversal attempt in claim identifier.")
+
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate safe random UUID filename
+    safe_name = f"{uuid.uuid4()}.{ext}"
+    file_path = upload_dir / safe_name
+
     # Write file
     with open(file_path, "wb") as f:
         f.write(content)
 
-    logger.info(f"Saved upload: {file_path} ({len(content)} bytes)")
-    return str(file_path), len(content), safe_name
+    logger.info(f"Saved upload: {file_path} ({len(content)} bytes, sha256={content_hash[:8]}...)")
+    return str(file_path), len(content), safe_name, content_hash
 
 
 def delete_upload_file(file_path: str) -> bool:

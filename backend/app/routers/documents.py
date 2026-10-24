@@ -63,8 +63,8 @@ async def upload_document(
             detail=f"Invalid document category. Allowed: {', '.join(DOCUMENT_CATEGORIES)}",
         )
 
-    # Save file to disk
-    file_path, file_size, safe_name = await save_upload_file(file, claim_id, document_category)
+    # Save file to disk with magic-byte validation and SHA-256 hash
+    file_path, file_size, safe_name, content_hash = await save_upload_file(file, claim_id, document_category)
 
     # Store metadata in MongoDB
     mongo_db = get_mongo_db()
@@ -77,6 +77,7 @@ async def upload_document(
         "file_path": file_path,
         "file_size": file_size,
         "mime_type": file.content_type or "application/octet-stream",
+        "content_hash": content_hash,
         "status": "UPLOADED",
         "upload_timestamp": datetime.now(timezone.utc),
         "verified_by": None,

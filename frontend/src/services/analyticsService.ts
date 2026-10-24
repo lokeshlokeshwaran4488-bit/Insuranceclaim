@@ -26,4 +26,46 @@ export const analyticsService = {
     const res = await api.get('/api/admin/audit-logs', { params });
     return res.data;
   },
+
+  async getReportSummary(params?: { from_date?: string; to_date?: string }) {
+    const res = await api.get('/api/reports/summary', { params });
+    return res.data;
+  },
+
+  async exportClaimsCsv(params?: {
+    status?: string;
+    incident_type?: string;
+    risk_level?: string;
+    from_date?: string;
+    to_date?: string;
+  }): Promise<Blob> {
+    const res = await api.get('/api/reports/claims/export-csv', {
+      params,
+      responseType: 'blob',
+    });
+    return res.data;
+  },
+
+  async exportSettlementsCsv(params?: {
+    status?: string;
+    from_date?: string;
+    to_date?: string;
+  }): Promise<Blob> {
+    const res = await api.get('/api/reports/settlements/export-csv', {
+      params,
+      responseType: 'blob',
+    });
+    return res.data;
+  },
 };
+
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}

@@ -40,13 +40,13 @@ async def register(
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    # Create user
+    # Create user (public self-registration is strictly restricted to CUSTOMER role)
     user = User(
         full_name=payload.full_name,
         email=payload.email,
         password_hash=get_password_hash(payload.password),
         phone=payload.phone,
-        role=payload.role,
+        role="CUSTOMER",
     )
     db.add(user)
     await db.flush()

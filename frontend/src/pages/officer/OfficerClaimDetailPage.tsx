@@ -22,6 +22,10 @@ const OfficerClaimDetailPage: React.FC = () => {
   const [documents, setDocuments] = useState<ClaimDocument[]>([]);
   const [docRequests, setDocRequests] = useState<DocumentRequest[]>([]);
   const [reviews, setReviews] = useState<ClaimReview[]>([]);
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
+  const [riskAssessment, setRiskAssessment] = useState<any>(null);
+  const [runningAi, setRunningAi] = useState<boolean>(false);
+  const [recalculatingRisk, setRecalculatingRisk] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Modals & Action States
@@ -43,18 +47,22 @@ const OfficerClaimDetailPage: React.FC = () => {
   const fetchClaimData = async () => {
     if (!id) return;
     try {
-      const [claimData, timelineData, docsData, requestsData, reviewsData] = await Promise.all([
+      const [claimData, timelineData, docsData, requestsData, reviewsData, aiData, riskData] = await Promise.all([
         claimService.getClaim(id),
         claimService.getTimeline(id),
         documentService.listDocuments(id).catch(() => ({ documents: [], total: 0 })),
         claimService.getDocumentRequests(id).catch(() => []),
         claimService.getClaimReviews(id).catch(() => []),
+        claimService.getAiAnalysis(id).catch(() => null),
+        claimService.getFraudScore(id).catch(() => null),
       ]);
       setClaim(claimData);
       setTimeline(timelineData);
       setDocuments(docsData.documents);
       setDocRequests(requestsData);
       setReviews(reviewsData);
+      setAiAnalysis(aiData);
+      setRiskAssessment(riskData);
       if (claimData.requested_amount) {
         setApprovedAmount(claimData.requested_amount.toString());
       }
@@ -63,6 +71,36 @@ const OfficerClaimDetailPage: React.FC = () => {
       toast.error('Could not load claim information');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRunAiSummary = async () => {
+    if (!id) return;
+    setRunningAi(true);
+    try {
+      const res = await claimService.runAiAssessment(id);
+      setAiAnalysis(res);
+      toast.success('AI Claim Summary generated and saved');
+      await fetchClaimData();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to generate AI summary');
+    } finally {
+      setRunningAi(false);
+    }
+  };
+
+  const handleRecalculateRisk = async () => {
+    if (!id) return;
+    setRecalculatingRisk(true);
+    try {
+      const res = await claimService.recalculateRiskScore(id);
+      setRiskAssessment(res);
+      toast.success('Fraud risk indicators evaluated and updated');
+      await fetchClaimData();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to evaluate fraud risk');
+    } finally {
+      setRecalculatingRisk(false);
     }
   };
 
@@ -320,17 +358,37 @@ const OfficerClaimDetailPage: React.FC = () => {
             </div>
           </div>
 
-          {/* AI-Assisted Verification & XGBoost Preliminary Scoring */}
+          {/* AI-Assisted Verification & Preliminary Risk Scoring */}
           <div className="card">
-            <div className="card-header">
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Sparkles size={18} style={{ color: 'var(--primary-light)' }} />
                 <div>
-                  <div className="card-title">AI-Assisted Verification & Fraud Risk Scoring</div>
-                  <div className="card-subtitle">Preliminary assistance • Explainable decision support</div>
+                  <div className="card-title">AI Verification & Preliminary Risk Assessment</div>
+                  <div className="card-subtitle">Transparent decision support • Fallback-resilient</div>
                 </div>
               </div>
-              {risk && <span className={`badge ${risk.className}`}>{risk.label}</span>}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {risk && <span className={`badge ${risk.className}`}>{risk.label}</span>}
+                <button
+                  onClick={handleRunAiSummary}
+                  disabled={runningAi}
+                  className="btn btn-secondary btn-sm"
+                  title="Generate or refresh AI structured summary"
+                >
+                  <Sparkles size={13} />
+                  {runningAi ? 'Analyzing...' : 'Run AI Summary'}
+                </button>
+                <button
+                  onClick={handleRecalculateRisk}
+                  disabled={recalculatingRisk}
+                  className="btn btn-secondary btn-sm"
+                  title="Re-evaluate rule-based risk indicators & hashes"
+                >
+                  <Shield size={13} />
+                  {recalculatingRisk ? 'Scoring...' : 'Evaluate Risk'}
+                </button>
+              </div>
             </div>
 
             {/* Clear Explainability & Non-definitive Advisory Notice */}
@@ -350,18 +408,18 @@ const OfficerClaimDetailPage: React.FC = () => {
                 <strong style={{ color: 'var(--primary-light)', display: 'block', marginBottom: 2 }}>
                   Advisory Verification Notice:
                 </strong>
-                AI analytics and gradient-boosted fraud scores are provided as preliminary decision support. Final determinations require officer review and judgment. Claims must not be rejected solely based on automated models.
+                AI analytics and risk indicators provide decision assistance. Final settlement determinations require human review and judgment. Claims are never approved or rejected automatically.
               </div>
             </div>
 
             <div className="grid-2" style={{ gap: 16, marginBottom: 16 }}>
               <div style={{ padding: 14, background: 'var(--bg-elevated)', borderRadius: 'var(--radius)' }}>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Calculated Anomaly Probability</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Anomaly & Risk Probability</div>
                 <div style={{ fontSize: 26, fontWeight: 800, color: claim.fraud_score !== undefined ? getFraudColor(claim.fraud_score) : 'var(--text-muted)' }}>
                   {claim.fraud_score !== undefined ? `${(claim.fraud_score * 100).toFixed(1)}%` : 'Evaluating...'}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                  Evaluated across claim amount ratio, policy maturity, incident timing, and evidence metrics.
+                  Engine: Transparent Multi-Factor Rule-Based & Heuristic Assessor (MongoDB-audited).
                 </div>
               </div>
 
@@ -376,11 +434,54 @@ const OfficerClaimDetailPage: React.FC = () => {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: documents.length > 0 ? 'var(--success)' : 'var(--warning)' }}>
                     {documents.length > 0 ? <Check size={14} /> : <Info size={14} />}
-                    {documents.length > 0 ? 'Customer supporting files attached' : 'Optional files omitted (Form-only submission)'}
+                    {documents.length > 0 ? `${documents.length} verified attachment(s) attached` : 'No file attachments uploaded'}
                   </div>
                 </div>
               </div>
             </div>
+
+            {/* Risk Indicators Breakdown (if evaluated) */}
+            {riskAssessment?.indicators && riskAssessment.indicators.length > 0 && (
+              <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-elevated)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Shield size={14} style={{ color: 'var(--primary-light)' }} />
+                  Evaluated Risk Indicators ({riskAssessment.indicators.length} triggered)
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {riskAssessment.indicators.map((ind: any, i: number) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, padding: '4px 8px', background: 'var(--bg-surface)', borderRadius: 4 }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>• {ind.name.replace(/_/g, ' ')}: {ind.reason}</span>
+                      <span className={`badge ${ind.severity === 'HIGH' ? 'badge-danger' : ind.severity === 'MEDIUM' ? 'badge-warning' : 'badge-info'}`} style={{ fontSize: 10 }}>
+                        {ind.severity} (+{Math.round(ind.weight * 100)}%)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* AI Summary and Extracted Findings */}
+            {aiAnalysis && (
+              <div style={{ padding: 14, background: 'var(--bg-elevated)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Sparkles size={14} style={{ color: 'var(--primary-light)' }} />
+                    AI Claim Summary & Checklist
+                  </div>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', background: 'var(--bg-card)', padding: '2px 8px', borderRadius: 10 }}>
+                    Model: {aiAnalysis.model || aiAnalysis.model_version || 'Advisory Engine'}
+                  </span>
+                </div>
+                <p style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--text-secondary)', margin: '0 0 10px 0' }}>
+                  {aiAnalysis.summary || aiAnalysis.extracted_info?.summary || 'No summary text available.'}
+                </p>
+                {aiAnalysis.recommended_documents && aiAnalysis.recommended_documents.length > 0 && (
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    <strong>Recommended Documents:</strong> {aiAnalysis.recommended_documents.join(', ')}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Customer-Provided Documents & Incident Images */}
@@ -485,6 +586,26 @@ const OfficerClaimDetailPage: React.FC = () => {
                         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                           {doc.document_category} • {(doc.file_size / 1024 / 1024).toFixed(2)} MB
                         </div>
+                        {doc.content_hash && (
+                          <div
+                            style={{
+                              fontSize: 10,
+                              fontFamily: 'monospace',
+                              color: 'var(--text-muted)',
+                              marginTop: 4,
+                              background: 'var(--bg-card)',
+                              padding: '2px 4px',
+                              borderRadius: 4,
+                              border: '1px solid var(--border)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                            title={`SHA-256 Hash: ${doc.content_hash}`}
+                          >
+                            SHA256: {doc.content_hash.slice(0, 8)}...{doc.content_hash.slice(-6)}
+                          </div>
+                        )}
                       </div>
 
                       <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

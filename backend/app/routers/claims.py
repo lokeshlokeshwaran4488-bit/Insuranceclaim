@@ -790,3 +790,57 @@ async def delete_claim(
 
     await db.delete(claim)
     await db.commit()
+
+
+# ─── Claim AI Analysis & Risk Score Aliases ──────────────────────────────────
+
+@router.get("/{claim_id}/ai-analysis")
+async def get_claim_ai_analysis(
+    claim_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve all stored AI summaries and analyses for this claim from MongoDB."""
+    result = await db.execute(select(Claim).where(Claim.id == claim_id))
+    claim = result.scalar_one_or_none()
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    if current_user.role == "CUSTOMER" and claim.customer_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    from app.database.mongodb import get_mongo_db
+    mongo_db = get_mongo_db()
+    cursor = mongo_db["ai_analysis"].find({"claim_id": claim_id}).sort("created_at", -1)
+    analyses = []
+    async for doc in cursor:
+        doc["_id"] = str(doc["_id"])
+        analyses.append(doc)
+
+    return {"claim_id": claim_id, "analyses": analyses}
+
+
+@router.get("/{claim_id}/fraud-score")
+async def get_claim_fraud_score(
+    claim_id: str,
+    current_user: User = Depends(get_officer),
+    db: AsyncSession = Depends(get_db),
+):
+    """Officer/Admin: Retrieve or compute latest transparent risk score for a claim."""
+    from sqlalchemy.orm import selectinload
+    from app.services.risk_service import evaluate_claim_risk
+
+    result = await db.execute(
+        select(Claim)
+        .options(selectinload(Claim.policy), selectinload(Claim.customer))
+        .where(Claim.id == claim_id)
+    )
+    claim = result.scalar_one_or_none()
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    risk_assessment = await evaluate_claim_risk(db, claim, claim.policy)
+    claim.fraud_score = risk_assessment["fraud_probability"]
+    claim.risk_level = risk_assessment["risk_level"]
+    await db.commit()
+    return risk_assessment

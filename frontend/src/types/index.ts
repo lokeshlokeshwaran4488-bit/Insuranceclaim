@@ -158,6 +158,7 @@ export interface ClaimDocument {
   file_path: string;
   file_size: number;
   mime_type: string;
+  content_hash?: string;
   status: DocumentStatus;
   upload_timestamp: string;
   verified_by?: string;

@@ -1,16 +1,33 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, Eye, Search, Filter } from 'lucide-react';
+import { FileText, Eye, Search, Filter, Download } from 'lucide-react';
 import { claimService } from '../../services/claimService';
+import { analyticsService, downloadBlob } from '../../services/analyticsService';
 import type { Claim } from '../../types';
 import { ClaimStatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency, formatDate, getFraudColor } from '../../utils/formatters';
+import toast from 'react-hot-toast';
 
 const AdminClaimsPage: React.FC = () => {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+      const params = statusFilter !== 'ALL' ? { status: statusFilter } : undefined;
+      const blob = await analyticsService.exportClaimsCsv(params);
+      downloadBlob(blob, `claims_${statusFilter.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.csv`);
+      toast.success('Claims exported successfully');
+    } catch (err) {
+      toast.error('Failed to export claims');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   useEffect(() => {
     const fetchClaims = async () => {
@@ -46,11 +63,20 @@ const AdminClaimsPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 className="page-title">All System Claims</h1>
           <p className="page-subtitle">Full repository of claims submitted across all insured members</p>
         </div>
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          className="btn btn-secondary"
+          title="Export current claims to CSV"
+        >
+          <Download size={15} />
+          {exporting ? 'Exporting...' : 'Export to CSV'}
+        </button>
       </div>
 
       <div className="card" style={{ marginBottom: 20, padding: 16 }}>

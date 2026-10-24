@@ -41,11 +41,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"PostgreSQL initialization error: {e}")
 
-    # Test MongoDB connection
+    # Test MongoDB connection and create indexes
     try:
+        from app.database.mongodb import init_mongo_indexes, ping_mongo
         mongo_ok = await ping_mongo()
         if mongo_ok:
-            logger.info("MongoDB ready.")
+            logger.info("MongoDB connection verified successfully.")
+            await init_mongo_indexes()
             try:
                 from app.database.mongodb import get_mongo_db
                 from app.database.postgres import AsyncSessionLocal
@@ -54,34 +56,34 @@ async def lifespan(app: FastAPI):
 
                 mongo_db = get_mongo_db()
                 async with AsyncSessionLocal() as db:
-                    result = await db.execute(select(User).where(User.role == "CUSTOMER"))
-                    existing_customers = result.scalars().all()
-                    for c in existing_customers:
+                    result = await db.execute(select(User))
+                    existing_users = result.scalars().all()
+                    for u in existing_users:
                         doc = {
-                            "id": c.id,
-                            "full_name": c.full_name,
-                            "email": c.email,
-                            "phone": c.phone,
-                            "address": c.address,
-                            "role": "CUSTOMER",
-                            "is_active": c.is_active,
-                            "password_hash": c.password_hash,
-                            "created_at": c.created_at.isoformat() if c.created_at else None,
-                            "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+                            "id": u.id,
+                            "full_name": u.full_name,
+                            "email": u.email,
+                            "phone": u.phone,
+                            "address": u.address,
+                            "role": u.role,
+                            "is_active": u.is_active,
+                            "created_at": u.created_at.isoformat() if u.created_at else None,
+                            "updated_at": u.updated_at.isoformat() if u.updated_at else None,
                         }
-                        await mongo_db["customers"].update_one(
-                            {"id": c.id}, {"$set": doc}, upsert=True
-                        )
+                        if u.role == "CUSTOMER":
+                            await mongo_db["customers"].update_one(
+                                {"id": u.id}, {"$set": doc}, upsert=True
+                            )
                         await mongo_db["users"].update_one(
-                            {"id": c.id}, {"$set": doc}, upsert=True
+                            {"id": u.id}, {"$set": doc}, upsert=True
                         )
-                logger.info("MongoDB customers synchronized.")
+                logger.info(f"MongoDB records synchronized ({len(existing_users)} users).")
             except Exception as sync_err:
-                logger.warning(f"MongoDB customer sync skipped: {sync_err}")
+                logger.warning(f"MongoDB user synchronization note: {sync_err}")
         else:
-            logger.warning("MongoDB not reachable — document features will be limited.")
+            logger.warning("MongoDB not reachable at startup — document metadata features will run in limited mode.")
     except Exception as e:
-        logger.warning(f"MongoDB startup check failed: {e}")
+        logger.warning(f"MongoDB startup check note: {e}")
 
     logger.info(f"{settings.APP_NAME} started successfully in {settings.APP_ENV} mode.")
     yield
@@ -137,7 +139,7 @@ if settings.PROMETHEUS_ENABLED:
 
 # ─── Register Routers ─────────────────────────────────────────────────────────
 from app.routers import auth, users, customers, policies, claims, documents, settlements
-from app.routers import notifications, analytics, ai, websocket
+from app.routers import notifications, analytics, ai, websocket, reports
 
 app.include_router(auth.router)
 app.include_router(users.router)
@@ -150,22 +152,40 @@ app.include_router(notifications.router)
 app.include_router(analytics.router)
 app.include_router(ai.router)
 app.include_router(websocket.router)
+app.include_router(reports.router)
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────
 @app.get("/api/health", tags=["Health"])
 async def health_check():
-    """System health check endpoint."""
-    from app.database.mongodb import ping_mongo
-    mongo_ok = await ping_mongo()
+    """
+    Comprehensive system and database health check endpoint.
+    Performs live pings on PostgreSQL and MongoDB without revealing credentials.
+    """
+    from app.database.postgres import get_postgres_health
+    from app.database.mongodb import get_mongo_health
+
+    pg_health = await get_postgres_health()
+    mongo_health = await get_mongo_health()
+
+    pg_ok = pg_health.get("status") == "connected"
+    mongo_ok = mongo_health.get("status") == "connected"
+
+    if pg_ok and mongo_ok:
+        overall_status = "healthy"
+    elif pg_ok or mongo_ok:
+        overall_status = "degraded"
+    else:
+        overall_status = "unhealthy"
+
     return {
-        "status": "healthy",
+        "status": overall_status,
         "app": settings.APP_NAME,
         "version": settings.VERSION,
         "environment": settings.APP_ENV,
         "services": {
-            "postgres": "connected",
-            "mongodb": "connected" if mongo_ok else "unavailable",
+            "postgres": pg_health,
+            "mongodb": mongo_health,
         },
     }
 

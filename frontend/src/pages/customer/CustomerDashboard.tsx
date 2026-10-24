@@ -139,7 +139,7 @@ const CustomerDashboard: React.FC = () => {
             {policies.slice(0, 3).map((p) => (
               <Link
                 key={p.id}
-                to={`/customer/policies/${p.id}`}
+                to="/customer/policies"
                 style={{
                   display: 'block',
                   padding: 16,

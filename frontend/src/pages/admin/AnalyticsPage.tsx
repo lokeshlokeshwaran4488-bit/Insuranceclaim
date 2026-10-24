@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { BarChart3, TrendingUp, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { BarChart3, TrendingUp, CheckCircle, XCircle, Clock, Download } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
-import { analyticsService } from '../../services/analyticsService';
+import { analyticsService, downloadBlob } from '../../services/analyticsService';
 import type { ClaimsAnalytics, DashboardStats } from '../../types';
+import toast from 'react-hot-toast';
 
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
@@ -10,6 +11,33 @@ const AnalyticsPage: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [claimsData, setClaimsData] = useState<ClaimsAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState<string | null>(null);
+
+  const handleExportClaims = async () => {
+    try {
+      setExporting('claims');
+      const blob = await analyticsService.exportClaimsCsv();
+      downloadBlob(blob, `claims_report_${new Date().toISOString().slice(0, 10)}.csv`);
+      toast.success('Claims report exported successfully');
+    } catch (err) {
+      toast.error('Failed to export claims report');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleExportSettlements = async () => {
+    try {
+      setExporting('settlements');
+      const blob = await analyticsService.exportSettlementsCsv();
+      downloadBlob(blob, `settlements_report_${new Date().toISOString().slice(0, 10)}.csv`);
+      toast.success('Settlements report exported successfully');
+    } catch (err) {
+      toast.error('Failed to export settlements report');
+    } finally {
+      setExporting(null);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -48,10 +76,30 @@ const AnalyticsPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 className="page-title">Claims Analytics & Performance</h1>
           <p className="page-subtitle">Real-time throughput, status distribution, and risk metrics</p>
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            onClick={handleExportClaims}
+            disabled={exporting !== null}
+            className="btn btn-secondary"
+            title="Download CSV report of all claims"
+          >
+            <Download size={15} />
+            {exporting === 'claims' ? 'Exporting...' : 'Export Claims (CSV)'}
+          </button>
+          <button
+            onClick={handleExportSettlements}
+            disabled={exporting !== null}
+            className="btn btn-secondary"
+            title="Download CSV report of financial settlements"
+          >
+            <Download size={15} />
+            {exporting === 'settlements' ? 'Exporting...' : 'Export Settlements (CSV)'}
+          </button>
         </div>
       </div>
 
