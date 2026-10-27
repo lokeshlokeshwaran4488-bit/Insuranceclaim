@@ -53,7 +53,7 @@ const getStepState = (claimStatus: string, stepIndex: number, hasDocRequest: boo
     case 5: // Decision
       if (isRejected) return 'rejected';
       if (isApproved) return 'done';
-      if (['UNDER_OFFICER_REVIEW', 'APPROVAL_PENDING', 'UNDER_FRAUD_REVIEW'].includes(claimStatus)) return 'active';
+      if (['UNDER_OFFICER_REVIEW', 'APPROVAL_PENDING', 'UNDER_FRAUD_REVIEW', 'ADMIN_REVIEW_REQUIRED', 'NEEDS_ADMIN_CLARIFICATION'].includes(claimStatus)) return 'active';
       return 'pending';
 
     case 6: // Settlement Processing

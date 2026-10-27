@@ -98,6 +98,13 @@ export interface Claim {
   payment_status?: string;
   payment_method?: string;
   payment_reference?: string;
+  // AI Verification Scores & Escalation
+  image_verification_score?: number | null;
+  document_verification_score?: number | null;
+  overall_verification_status?: 'VERIFIED' | 'SUSPICIOUS' | 'UNCERTAIN' | 'MANUAL_REVIEW' | 'PENDING';
+  escalation_reason?: string;
+  escalated_by_name?: string;
+  escalated_at?: string;
 }
 
 export type ClaimStatus =
@@ -110,6 +117,8 @@ export type ClaimStatus =
   | 'UNDER_OFFICER_REVIEW'
   | 'ADDITIONAL_DOCUMENTS_REQUIRED'
   | 'UNDER_FRAUD_REVIEW'
+  | 'ADMIN_REVIEW_REQUIRED'
+  | 'NEEDS_ADMIN_CLARIFICATION'
   | 'APPROVAL_PENDING'
   | 'APPROVED'
   | 'REJECTED'
@@ -308,5 +317,57 @@ export interface WebSocketMessage {
   status?: string;
   message?: string;
   timestamp?: string;
+}
+
+// ── AI Unified Verification ─────────────────────────
+export interface AiVerificationResult {
+  claim_id: string;
+  analysis_type: string;
+  overall_verification_status: 'VERIFIED' | 'SUSPICIOUS' | 'UNCERTAIN' | 'MANUAL_REVIEW' | 'PENDING';
+  image_verification_score: number | null;
+  image_verification_status: string;
+  image_explanation: string;
+  image_details?: Array<{
+    id: string;
+    filename: string;
+    category: string;
+    status: string;
+    resolution: string;
+    blur_score: number;
+    is_blurry: boolean;
+    damage_type: string;
+    damage_detected: boolean | null;
+    relevant_to_incident: boolean;
+    concerns: string[];
+    manipulation_signs: string[];
+    has_duplicate: boolean;
+  }>;
+  document_verification_score: number | null;
+  document_verification_status: string;
+  document_explanation: string;
+  document_details?: Array<{
+    id: string;
+    filename: string;
+    category: string;
+    status: string;
+    ocr_method: string;
+    ocr_success: boolean;
+    extracted_length: number;
+    matches: string[];
+    discrepancies: string[];
+    missing_fields: string[];
+    has_duplicate: boolean;
+  }>;
+  fraud_risk_score: number;
+  risk_level: string;
+  risk_indicators: string[];
+  overall_explanation: string;
+  detected_concerns: string[];
+  missing_documents: string[];
+  duplicate_findings: any[];
+  total_documents_analyzed: number;
+  total_images_analyzed: number;
+  created_at: string;
+  model_version: string;
 }
 

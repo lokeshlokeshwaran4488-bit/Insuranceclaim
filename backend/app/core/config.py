@@ -25,6 +25,17 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = "postgres"
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/insurance_claims"
 
+    @property
+    def async_database_url(self) -> str:
+        url = self.DATABASE_URL
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgresql://") and not url.startswith("postgresql+asyncpg://"):
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if "sslmode=" in url:
+            url = url.replace("sslmode=", "ssl=")
+        return url
+
     # MongoDB
     MONGO_HOST: str = "localhost"
     MONGO_PORT: int = 27017
@@ -65,7 +76,9 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> List[str]:
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
+        if not self.CORS_ORIGINS or self.CORS_ORIGINS.strip() == "*":
+            return ["*"]
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     @property
     def allowed_extensions_list(self) -> List[str]:

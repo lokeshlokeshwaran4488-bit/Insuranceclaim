@@ -53,6 +53,7 @@ class UserOut(BaseModel):
     profile_picture_url: Optional[str]
     created_at: datetime
     updated_at: datetime
+    total_claims: Optional[int] = 0
 
     model_config = {"from_attributes": True}
 

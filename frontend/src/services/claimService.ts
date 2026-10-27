@@ -15,6 +15,8 @@ interface ClaimFilters {
   incident_type?: string;
   risk_level?: string;
   search?: string;
+  escalated_only?: boolean;
+  high_fraud_risk?: boolean;
 }
 
 export const claimService = {
@@ -90,7 +92,17 @@ export const claimService = {
   },
 
   async getAiAnalysis(claimId: string): Promise<any> {
-    const res = await api.get<any>(`/api/claims/${claimId}/ai-analysis`);
+    const res = await api.get<any>(`/api/claims/${claimId}/ai-verification`);
+    return res.data;
+  },
+
+  async getAiVerification(claimId: string): Promise<any> {
+    const res = await api.get<any>(`/api/claims/${claimId}/ai-verification`);
+    return res.data;
+  },
+
+  async runAiVerification(claimId: string): Promise<any> {
+    const res = await api.post<any>(`/api/claims/${claimId}/run-ai-verification`);
     return res.data;
   },
 
@@ -125,8 +137,31 @@ export const claimService = {
     return res.data;
   },
 
-  async escalateClaim(claimId: string, remarks: string): Promise<Claim> {
-    const res = await api.post<Claim>(`/api/claims/${claimId}/escalate`, { remarks });
+  async escalateClaim(
+    claimId: string,
+    data: string | { reason: string; remarks?: string; ai_findings?: string; evidence_references?: string[] }
+  ): Promise<Claim> {
+    const payload = typeof data === 'string' ? { reason: data, remarks: data } : data;
+    const res = await api.post<Claim>(`/api/claims/${claimId}/escalate`, payload);
+    return res.data;
+  },
+
+  async markManualReview(claimId: string, reason: string): Promise<Claim> {
+    const res = await api.post<Claim>(`/api/claims/${claimId}/mark-manual-review`, { reason });
+    return res.data;
+  },
+
+  async adminDecision(
+    claimId: string,
+    data: {
+      decision: 'APPROVE' | 'REJECT' | 'RETURN_TO_OFFICER';
+      reason: string;
+      approved_amount?: number;
+      instructions?: string;
+      assigned_officer_id?: string;
+    }
+  ): Promise<Claim> {
+    const res = await api.post<Claim>(`/api/claims/${claimId}/admin-decision`, data);
     return res.data;
   },
 

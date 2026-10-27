@@ -89,10 +89,40 @@ class RecommendRejectionRequest(BaseModel):
 
 
 class EscalateRequest(BaseModel):
-    remarks: str
+    reason: Optional[str] = None
+    remarks: Optional[str] = None
+    evidence_references: Optional[list[str]] = None
+    ai_findings: Optional[str] = None
+
+    def get_reason(self) -> str:
+        r = (self.reason or self.remarks or "").strip()
+        if not r:
+            raise ValueError("Escalation reason is mandatory")
+        return r
+
+
+class RequestClarificationRequest(BaseModel):
+    reason: str
+
+
+class MarkManualReviewRequest(BaseModel):
+    reason: str
 
 
 # ─── Admin Actions ────────────────────────────────────────────────────────────
+
+class RespondClarificationRequest(BaseModel):
+    instructions: str
+    officer_id: Optional[str] = None
+
+
+class AdminDecisionRequest(BaseModel):
+    decision: str  # APPROVE | REJECT | RETURN_TO_OFFICER
+    reason: str    # Mandatory decision reason
+    approved_amount: Optional[float] = None
+    instructions: Optional[str] = None
+    assigned_officer_id: Optional[str] = None
+
 
 class ApproveClaimRequest(BaseModel):
     approved_amount: float
@@ -142,6 +172,14 @@ class ClaimOut(BaseModel):
     approval_notes: Optional[str]
     created_at: datetime
     updated_at: datetime
+
+    # AI Verification Scores & Escalation
+    image_verification_score: Optional[float] = None
+    document_verification_score: Optional[float] = None
+    overall_verification_status: Optional[str] = None
+    escalation_reason: Optional[str] = None
+    escalated_by_name: Optional[str] = None
+    escalated_at: Optional[datetime] = None
 
     # Nested
     customer_name: Optional[str] = None

@@ -63,6 +63,8 @@ export const getClaimStatusConfig = (status: ClaimStatus): {
     UNDER_OFFICER_REVIEW:         { label: 'Under Review',                 className: 'badge-blue',   color: '#3b82f6' },
     ADDITIONAL_DOCUMENTS_REQUIRED:{ label: 'Docs Required',               className: 'badge-yellow', color: '#f59e0b' },
     UNDER_FRAUD_REVIEW:           { label: 'Fraud Review',                 className: 'badge-red',    color: '#ef4444' },
+    ADMIN_REVIEW_REQUIRED:        { label: 'Admin Review Required',        className: 'badge-purple', color: '#8b5cf6' },
+    NEEDS_ADMIN_CLARIFICATION:    { label: 'Admin Clarification',          className: 'badge-purple', color: '#8b5cf6' },
     APPROVAL_PENDING:             { label: 'Approval Pending',             className: 'badge-yellow', color: '#f59e0b' },
     APPROVED:                     { label: 'Approved',                     className: 'badge-green',  color: '#10b981' },
     REJECTED:                     { label: 'Rejected',                     className: 'badge-red',    color: '#ef4444' },
@@ -72,6 +74,27 @@ export const getClaimStatusConfig = (status: ClaimStatus): {
     CLOSED:                       { label: 'Closed',                       className: 'badge-gray',   color: '#64748b' },
   };
   return configs[status] ?? { label: status, className: 'badge-gray', color: '#64748b' };
+};
+
+// ── Verification Status Config ─────────────────────────────────────────
+export const getVerificationStatusConfig = (status?: string | null): {
+  label: string;
+  className: string;
+  color: string;
+} => {
+  switch (status) {
+    case 'VERIFIED':
+      return { label: 'VERIFIED', className: 'badge-green', color: '#10b981' };
+    case 'SUSPICIOUS':
+      return { label: 'SUSPICIOUS', className: 'badge-red', color: '#ef4444' };
+    case 'UNCERTAIN':
+      return { label: 'UNCERTAIN', className: 'badge-yellow', color: '#f59e0b' };
+    case 'MANUAL_REVIEW':
+      return { label: 'MANUAL REVIEW', className: 'badge-purple', color: '#8b5cf6' };
+    case 'PENDING':
+    default:
+      return { label: 'PENDING', className: 'badge-gray', color: '#64748b' };
+  }
 };
 
 // ── Risk Level ────────────────────────────────────────────────────────

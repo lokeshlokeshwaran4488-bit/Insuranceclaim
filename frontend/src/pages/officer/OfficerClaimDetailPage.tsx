@@ -3,19 +3,28 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Shield, Sparkles, AlertTriangle, CheckCircle, XCircle,
   FileText, Image as ImageIcon, Download, Check, AlertCircle, Clock,
-  Calendar, MapPin, MessageSquare, Send, User, ChevronRight, Info
+  MessageSquare, ChevronRight, Info, AlertOctagon, CornerDownLeft,
+  Lock, RefreshCw, Send, CheckSquare, Square
 } from 'lucide-react';
 import { claimService } from '../../services/claimService';
 import { documentService } from '../../services/documentService';
-import type { Claim, ClaimTimeline, ClaimDocument, DocumentRequest, ClaimReview } from '../../types';
+import { useAuth } from '../../context/AuthContext';
+import type {
+  Claim, ClaimTimeline, ClaimDocument, DocumentRequest,
+  ClaimReview, AiVerificationResult
+} from '../../types';
 import ClaimTimelineComponent from '../../components/claim/ClaimTimeline';
 import { ClaimStatusBadge } from '../../components/common/StatusBadge';
-import { formatCurrency, formatDate, formatDateTime, getFraudColor, getRiskConfig } from '../../utils/formatters';
+import {
+  formatCurrency, formatDate, formatDateTime,
+  getFraudColor, getRiskConfig, getVerificationStatusConfig
+} from '../../utils/formatters';
 import toast from 'react-hot-toast';
 
 const OfficerClaimDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [claim, setClaim] = useState<Claim | null>(null);
   const [timeline, setTimeline] = useState<ClaimTimeline[]>([]);
@@ -24,7 +33,9 @@ const OfficerClaimDetailPage: React.FC = () => {
   const [reviews, setReviews] = useState<ClaimReview[]>([]);
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [riskAssessment, setRiskAssessment] = useState<any>(null);
+  const [aiVerification, setAiVerification] = useState<AiVerificationResult | null>(null);
   const [runningAi, setRunningAi] = useState<boolean>(false);
+  const [runningVerification, setRunningVerification] = useState<boolean>(false);
   const [recalculatingRisk, setRecalculatingRisk] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -33,9 +44,12 @@ const OfficerClaimDetailPage: React.FC = () => {
   const [showRejectModal, setShowRejectModal] = useState<boolean>(false);
   const [showDocRequestModal, setShowDocRequestModal] = useState<boolean>(false);
   const [showNoteModal, setShowNoteModal] = useState<boolean>(false);
+  const [showEscalateModal, setShowEscalateModal] = useState<boolean>(false);
+  const [showManualReviewModal, setShowManualReviewModal] = useState<boolean>(false);
+  const [showAdminDecisionModal, setShowAdminDecisionModal] = useState<boolean>(false);
   const [submittingAction, setSubmittingAction] = useState<boolean>(false);
 
-  // Form states
+  // Officer Form states
   const [approvedAmount, setApprovedAmount] = useState<string>('');
   const [approvalNotes, setApprovalNotes] = useState<string>('');
   const [rejectionReason, setRejectionReason] = useState<string>('');
@@ -44,10 +58,26 @@ const OfficerClaimDetailPage: React.FC = () => {
   const [docRequestDeadline, setDocRequestDeadline] = useState<number>(7);
   const [internalNote, setInternalNote] = useState<string>('');
 
+  // Escalation Form states
+  const [escalateReason, setEscalateReason] = useState<string>('');
+  const [escalateRemarks, setEscalateRemarks] = useState<string>('');
+  const [escalateEvidenceRefs, setEscalateEvidenceRefs] = useState<string[]>([]);
+  const [escalateAiFindings, setEscalateAiFindings] = useState<string>('');
+
+  // Manual Review Form states
+  const [manualReviewReason, setManualReviewReason] = useState<string>('');
+
+  // Admin Decision Form states
+  const [adminDecisionAction, setAdminDecisionAction] = useState<'APPROVE' | 'REJECT' | 'RETURN_TO_OFFICER'>('APPROVE');
+  const [adminApprovedAmount, setAdminApprovedAmount] = useState<string>('');
+  const [adminApprovalNotes, setAdminApprovalNotes] = useState<string>('');
+  const [adminRejectionReason, setAdminRejectionReason] = useState<string>('');
+  const [adminReturnInstructions, setAdminReturnInstructions] = useState<string>('');
+
   const fetchClaimData = async () => {
     if (!id) return;
     try {
-      const [claimData, timelineData, docsData, requestsData, reviewsData, aiData, riskData] = await Promise.all([
+      const [claimData, timelineData, docsData, requestsData, reviewsData, aiData, riskData, verifData] = await Promise.all([
         claimService.getClaim(id),
         claimService.getTimeline(id),
         documentService.listDocuments(id).catch(() => ({ documents: [], total: 0 })),
@@ -55,6 +85,7 @@ const OfficerClaimDetailPage: React.FC = () => {
         claimService.getClaimReviews(id).catch(() => []),
         claimService.getAiAnalysis(id).catch(() => null),
         claimService.getFraudScore(id).catch(() => null),
+        claimService.getAiVerification(id).catch(() => null),
       ]);
       setClaim(claimData);
       setTimeline(timelineData);
@@ -63,8 +94,10 @@ const OfficerClaimDetailPage: React.FC = () => {
       setReviews(reviewsData);
       setAiAnalysis(aiData);
       setRiskAssessment(riskData);
+      setAiVerification(verifData);
       if (claimData.requested_amount) {
         setApprovedAmount(claimData.requested_amount.toString());
+        setAdminApprovedAmount(claimData.requested_amount.toString());
       }
     } catch (err) {
       console.error('Failed to load claim', err);
@@ -86,6 +119,21 @@ const OfficerClaimDetailPage: React.FC = () => {
       toast.error(err?.response?.data?.detail || 'Failed to generate AI summary');
     } finally {
       setRunningAi(false);
+    }
+  };
+
+  const handleRunAiVerification = async () => {
+    if (!id) return;
+    setRunningVerification(true);
+    try {
+      const res = await claimService.runAiVerification(id);
+      setAiVerification(res);
+      toast.success('AI Image & Document Verification completed');
+      await fetchClaimData();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to run AI verification');
+    } finally {
+      setRunningVerification(false);
     }
   };
 
@@ -194,6 +242,104 @@ const OfficerClaimDetailPage: React.FC = () => {
     }
   };
 
+  const handleEscalateToAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id) return;
+    if (!escalateReason.trim()) {
+      toast.error('Mandatory escalation reason is required');
+      return;
+    }
+
+    setSubmittingAction(true);
+    try {
+      await claimService.escalateClaim(id, {
+        reason: escalateReason,
+        remarks: escalateRemarks || undefined,
+        evidence_references: escalateEvidenceRefs.length > 0 ? escalateEvidenceRefs : undefined,
+        ai_findings: escalateAiFindings || undefined,
+      });
+      toast.success('Claim successfully escalated to Administrator for executive review');
+      setShowEscalateModal(false);
+      await fetchClaimData();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Escalation failed');
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
+  const handleMarkManualReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id) return;
+    if (!manualReviewReason.trim()) {
+      toast.error('Please specify a reason for marking manual review');
+      return;
+    }
+
+    setSubmittingAction(true);
+    try {
+      await claimService.markManualReview(id, manualReviewReason);
+      toast.success('Claim marked for manual verification');
+      setShowManualReviewModal(false);
+      await fetchClaimData();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Action failed');
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
+  const handleAdminDecision = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id) return;
+
+    let reasonStr = '';
+    let amountVal: number | undefined = undefined;
+
+    if (adminDecisionAction === 'APPROVE') {
+      const amount = parseFloat(adminApprovedAmount);
+      if (isNaN(amount) || amount <= 0) {
+        toast.error('Please enter a valid approval amount');
+        return;
+      }
+      if (!adminApprovalNotes.trim()) {
+        toast.error('Approval justification notes are mandatory');
+        return;
+      }
+      reasonStr = adminApprovalNotes;
+      amountVal = amount;
+    } else if (adminDecisionAction === 'REJECT') {
+      if (!adminRejectionReason.trim()) {
+        toast.error('Mandatory rejection reason is required');
+        return;
+      }
+      reasonStr = adminRejectionReason;
+    } else if (adminDecisionAction === 'RETURN_TO_OFFICER') {
+      if (!adminReturnInstructions.trim()) {
+        toast.error('Mandatory investigation instructions for officer are required');
+        return;
+      }
+      reasonStr = adminReturnInstructions;
+    }
+
+    setSubmittingAction(true);
+    try {
+      await claimService.adminDecision(id, {
+        decision: adminDecisionAction,
+        reason: reasonStr,
+        approved_amount: amountVal,
+        instructions: adminDecisionAction === 'RETURN_TO_OFFICER' ? adminReturnInstructions : undefined,
+      });
+      toast.success(`Admin decision (${adminDecisionAction}) applied successfully!`);
+      setShowAdminDecisionModal(false);
+      await fetchClaimData();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Admin decision failed');
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!id || !internalNote.trim()) return;
@@ -222,11 +368,17 @@ const OfficerClaimDetailPage: React.FC = () => {
     }
   };
 
+  const toggleEvidenceRef = (refStr: string) => {
+    setEscalateEvidenceRefs((prev) =>
+      prev.includes(refStr) ? prev.filter((r) => r !== refStr) : [...prev, refStr]
+    );
+  };
+
   if (loading) {
     return (
       <div className="loading-center">
         <div className="spinner" />
-        <span>Loading officer claim workspace...</span>
+        <span>Loading claim review workspace...</span>
       </div>
     );
   }
@@ -242,21 +394,37 @@ const OfficerClaimDetailPage: React.FC = () => {
     );
   }
 
+  const isAdmin = user?.role === 'ADMIN';
+  const isOfficer = user?.role === 'CLAIM_OFFICER';
+  const isEscalated = ['ADMIN_REVIEW_REQUIRED', 'UNDER_FRAUD_REVIEW', 'NEEDS_ADMIN_CLARIFICATION'].includes(claim.status);
+  const canDecide = ['SUBMITTED', 'UNDER_OFFICER_REVIEW', 'DOCUMENTS_RECEIVED', 'AI_ANALYSIS_COMPLETED', 'APPROVAL_PENDING', 'ADDITIONAL_DOCUMENTS_REQUIRED', 'UNDER_VERIFICATION'].includes(claim.status) && !isEscalated;
+
   const risk = claim.risk_level ? getRiskConfig(claim.risk_level) : null;
-  const canDecide = ['SUBMITTED', 'UNDER_OFFICER_REVIEW', 'DOCUMENTS_RECEIVED', 'AI_ANALYSIS_COMPLETED', 'APPROVAL_PENDING', 'ADDITIONAL_DOCUMENTS_REQUIRED'].includes(claim.status);
+  const verifStatus = getVerificationStatusConfig(
+    aiVerification?.overall_verification_status || claim.overall_verification_status
+  );
 
   return (
     <div>
-      {/* Top Header & Officer Action Bar */}
+      {/* Top Header & Action Bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => navigate('/officer/claims')} className="btn btn-secondary btn-icon" title="Back to claims">
+          <button
+            onClick={() => navigate(isAdmin ? '/admin/claims' : '/officer/claims')}
+            className="btn btn-secondary btn-icon"
+            title="Back to claims"
+          >
             <ArrowLeft size={16} />
           </button>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <h1 className="page-title" style={{ margin: 0 }}>Review: {claim.claim_number}</h1>
               <ClaimStatusBadge status={claim.status} />
+              {isEscalated && (
+                <span className="badge badge-red" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <AlertOctagon size={12} /> Escalated to Admin
+                </span>
+              )}
             </div>
             <p className="page-subtitle" style={{ margin: '4px 0 0 0' }}>
               Customer: <strong>{claim.customer_name || 'N/A'}</strong> • Policy #{claim.policy_number || 'N/A'}
@@ -265,10 +433,10 @@ const OfficerClaimDetailPage: React.FC = () => {
         </div>
 
         {/* Action Controls */}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           {claim.status === 'SUBMITTED' && (
             <button onClick={handleStartReview} className="btn btn-secondary">
-              <Clock size={15} /> Start Formal Review
+              <Clock size={15} /> Start Review
             </button>
           )}
 
@@ -276,14 +444,75 @@ const OfficerClaimDetailPage: React.FC = () => {
             <MessageSquare size={15} /> Add Note
           </button>
 
-          {canDecide && (
-            <button onClick={() => setShowDocRequestModal(true)} className="btn btn-secondary">
-              <AlertTriangle size={15} /> Request Documents
+          {/* ADMIN ACTION CONTROLS */}
+          {isAdmin && (
+            <button
+              onClick={() => {
+                setAdminDecisionAction('APPROVE');
+                setAdminApprovedAmount(claim.requested_amount?.toString() || '');
+                setShowAdminDecisionModal(true);
+              }}
+              className="btn btn-primary"
+              style={{ background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', borderColor: '#6366f1' }}
+            >
+              <Shield size={15} /> Admin Decision & Review
             </button>
           )}
 
-          {canDecide && (
+          {/* OFFICER CONTROLS (IF CLAIM IS ESCALATED, ACTIONS ARE LOCKED) */}
+          {isOfficer && isEscalated && (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 14px',
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                borderRadius: 'var(--radius)',
+                color: 'var(--danger)',
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              <Lock size={14} /> Escalated to Admin — Officer Approval Locked
+            </div>
+          )}
+
+          {/* OFFICER CONTROLS (ACTIVE WHEN NOT ESCALATED) */}
+          {isOfficer && canDecide && (
             <>
+              <button onClick={() => setShowDocRequestModal(true)} className="btn btn-secondary">
+                <AlertTriangle size={15} /> Request Docs
+              </button>
+
+              <button
+                onClick={() => {
+                  setManualReviewReason('Image or document verification inconclusive. In-depth manual forensic inspection needed.');
+                  setShowManualReviewModal(true);
+                }}
+                className="btn btn-secondary"
+                title="Mark claim for manual verification"
+              >
+                <Clock size={15} /> Mark Manual Review
+              </button>
+
+              <button
+                onClick={() => {
+                  setEscalateReason('Multi-modal AI discrepancies or potential fraud indicators flagged during review');
+                  if (aiVerification) {
+                    setEscalateAiFindings(
+                      `Image Score: ${aiVerification.image_verification_score !== null && aiVerification.image_verification_score !== undefined ? `${(aiVerification.image_verification_score * 100).toFixed(0)}%` : 'N/A'}, Doc Score: ${aiVerification.document_verification_score !== null && aiVerification.document_verification_score !== undefined ? `${(aiVerification.document_verification_score * 100).toFixed(0)}%` : 'N/A'}, Fraud Risk: ${aiVerification.fraud_risk_score !== undefined ? `${(aiVerification.fraud_risk_score * 100).toFixed(0)}%` : 'N/A'}. Overall: ${aiVerification.overall_verification_status}. Concerns: ${(aiVerification.detected_concerns || []).join('; ')}`
+                    );
+                  }
+                  setShowEscalateModal(true);
+                }}
+                className="btn btn-warning"
+                title="Escalate claim to Executive Administrator"
+              >
+                <AlertOctagon size={15} /> Escalate to Admin
+              </button>
+
               <button
                 onClick={() => setShowApproveModal(true)}
                 className="btn btn-primary"
@@ -302,10 +531,58 @@ const OfficerClaimDetailPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Escalation Alert Banner if Claim is in Escalated State */}
+      {isEscalated && (
+        <div
+          style={{
+            padding: 16,
+            background: 'rgba(239, 68, 68, 0.08)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: 'var(--radius)',
+            marginBottom: 20,
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 14,
+          }}
+        >
+          <AlertOctagon size={24} style={{ color: 'var(--danger)', flexShrink: 0, marginTop: 2 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--danger)', marginBottom: 4 }}>
+              Administrative Escalation Review Active ({claim.status.replace(/_/g, ' ')})
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 8px 0', lineHeight: 1.5 }}>
+              This claim has been escalated to Executive Administration for elevated review and risk audit.
+              {isOfficer && ' As a Claim Officer, you cannot approve or reject this claim until an Administrator renders a verdict or returns it to you with instructions.'}
+            </p>
+            {claim.escalation_reason && (
+              <div style={{ fontSize: 12, background: 'var(--bg-elevated)', padding: '6px 12px', borderRadius: 4, display: 'inline-block' }}>
+                <strong style={{ color: 'var(--text-primary)' }}>Escalation Reason:</strong> {claim.escalation_reason}
+                {claim.escalated_by_name && <span style={{ marginLeft: 8 }}>• <strong>Escalated by:</strong> {claim.escalated_by_name}</span>}
+                {claim.escalated_at && <span style={{ marginLeft: 8 }}>• <strong>On:</strong> {formatDateTime(claim.escalated_at)}</span>}
+              </div>
+            )}
+          </div>
+          {isAdmin && (
+            <button
+              onClick={() => {
+                setAdminDecisionAction('APPROVE');
+                setAdminApprovedAmount(claim.requested_amount?.toString() || '');
+                setShowAdminDecisionModal(true);
+              }}
+              className="btn btn-primary btn-sm"
+              style={{ whiteSpace: 'nowrap' }}
+            >
+              Take Admin Decision
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Main Grid: 2 Columns */}
       <div className="grid-3" style={{ gridTemplateColumns: '2fr 1fr', gap: 24, alignItems: 'start' }}>
         {/* Left Column: Evidence, AI & Incident Details */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
           {/* Incident & Policy Overview */}
           <div className="card">
             <div className="card-header">
@@ -358,40 +635,32 @@ const OfficerClaimDetailPage: React.FC = () => {
             </div>
           </div>
 
-          {/* AI-Assisted Verification & Preliminary Risk Scoring */}
+          {/* AI IMAGE & DOCUMENT VERIFICATION CARD */}
           <div className="card">
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Sparkles size={18} style={{ color: 'var(--primary-light)' }} />
+                <Sparkles size={20} style={{ color: 'var(--primary-light)' }} />
                 <div>
-                  <div className="card-title">AI Verification & Preliminary Risk Assessment</div>
-                  <div className="card-subtitle">Transparent decision support • Fallback-resilient</div>
+                  <div className="card-title">AI Image & Document Verification</div>
+                  <div className="card-subtitle">
+                    Automated multi-modal inspection • Binary duplicates • Non-definitive advisory
+                  </div>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {risk && <span className={`badge ${risk.className}`}>{risk.label}</span>}
                 <button
-                  onClick={handleRunAiSummary}
-                  disabled={runningAi}
+                  onClick={handleRunAiVerification}
+                  disabled={runningVerification}
                   className="btn btn-secondary btn-sm"
-                  title="Generate or refresh AI structured summary"
+                  title="Run or refresh real AI image and document verification analysis"
                 >
-                  <Sparkles size={13} />
-                  {runningAi ? 'Analyzing...' : 'Run AI Summary'}
-                </button>
-                <button
-                  onClick={handleRecalculateRisk}
-                  disabled={recalculatingRisk}
-                  className="btn btn-secondary btn-sm"
-                  title="Re-evaluate rule-based risk indicators & hashes"
-                >
-                  <Shield size={13} />
-                  {recalculatingRisk ? 'Scoring...' : 'Evaluate Risk'}
+                  <RefreshCw size={13} className={runningVerification ? 'spin' : ''} />
+                  {runningVerification ? 'Verifying Files...' : 'Run AI Verification'}
                 </button>
               </div>
             </div>
 
-            {/* Clear Explainability & Non-definitive Advisory Notice */}
+            {/* Advisory Transparency Banner */}
             <div
               style={{
                 display: 'flex',
@@ -404,39 +673,288 @@ const OfficerClaimDetailPage: React.FC = () => {
               }}
             >
               <Info size={18} style={{ color: 'var(--primary-light)', flexShrink: 0, marginTop: 2 }} />
-              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                 <strong style={{ color: 'var(--primary-light)', display: 'block', marginBottom: 2 }}>
-                  Advisory Verification Notice:
+                  Explainability & Non-Definitive Rule:
                 </strong>
-                AI analytics and risk indicators provide decision assistance. Final settlement determinations require human review and judgment. Claims are never approved or rejected automatically.
+                AI verification confidence represents model certainty regarding evidence clarity and consistency. An inability to extract text or confirm authenticity does <em>not</em> denote fraud; uncertain items are designated as <code>UNCERTAIN</code> or <code>MANUAL_REVIEW</code> for human officer judgment.
               </div>
             </div>
 
-            <div className="grid-2" style={{ gap: 16, marginBottom: 16 }}>
-              <div style={{ padding: 14, background: 'var(--bg-elevated)', borderRadius: 'var(--radius)' }}>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Anomaly & Risk Probability</div>
-                <div style={{ fontSize: 26, fontWeight: 800, color: claim.fraud_score !== undefined ? getFraudColor(claim.fraud_score) : 'var(--text-muted)' }}>
-                  {claim.fraud_score !== undefined ? `${(claim.fraud_score * 100).toFixed(1)}%` : 'Evaluating...'}
+            {/* 4 Score Indicators (Confidence vs Risk) */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 16 }}>
+              {/* 1. Image Verification Score */}
+              <div style={{ padding: 12, background: 'var(--bg-elevated)', borderRadius: 'var(--radius)', textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase' }}>
+                  Image Score
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                  Engine: Transparent Multi-Factor Rule-Based & Heuristic Assessor (MongoDB-audited).
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--primary-light)' }}>
+                  {aiVerification?.image_verification_score !== undefined && aiVerification?.image_verification_score !== null
+                    ? `${(aiVerification.image_verification_score * 100).toFixed(0)}%`
+                    : claim.image_verification_score !== undefined && claim.image_verification_score !== null
+                    ? `${(claim.image_verification_score * 100).toFixed(0)}%`
+                    : 'Pending'}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                  Confidence Level
                 </div>
               </div>
 
-              <div style={{ padding: 14, background: 'var(--bg-elevated)', borderRadius: 'var(--radius)' }}>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Rule Verification Summary</div>
-                <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--success)' }}>
-                    <Check size={14} /> Active policy tenure verified
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--success)' }}>
-                    <Check size={14} /> Requested amount within policy limits
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: documents.length > 0 ? 'var(--success)' : 'var(--warning)' }}>
-                    {documents.length > 0 ? <Check size={14} /> : <Info size={14} />}
-                    {documents.length > 0 ? `${documents.length} verified attachment(s) attached` : 'No file attachments uploaded'}
-                  </div>
+              {/* 2. Document Verification Score */}
+              <div style={{ padding: 12, background: 'var(--bg-elevated)', borderRadius: 'var(--radius)', textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase' }}>
+                  Doc Score
                 </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#38bdf8' }}>
+                  {aiVerification?.document_verification_score !== undefined && aiVerification?.document_verification_score !== null
+                    ? `${(aiVerification.document_verification_score * 100).toFixed(0)}%`
+                    : claim.document_verification_score !== undefined && claim.document_verification_score !== null
+                    ? `${(claim.document_verification_score * 100).toFixed(0)}%`
+                    : 'Pending'}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                  OCR & Data Consistency
+                </div>
+              </div>
+
+              {/* 3. Fraud Risk Score */}
+              <div style={{ padding: 12, background: 'var(--bg-elevated)', borderRadius: 'var(--radius)', textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase' }}>
+                  Fraud Risk
+                </div>
+                <div
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 800,
+                    color:
+                      aiVerification?.fraud_risk_score !== undefined
+                        ? getFraudColor(aiVerification.fraud_risk_score)
+                        : claim.fraud_score !== undefined
+                        ? getFraudColor(claim.fraud_score)
+                        : 'var(--text-muted)',
+                  }}
+                >
+                  {aiVerification?.fraud_risk_score !== undefined
+                    ? `${(aiVerification.fraud_risk_score * 100).toFixed(0)}%`
+                    : claim.fraud_score !== undefined
+                    ? `${(claim.fraud_score * 100).toFixed(0)}%`
+                    : 'Pending'}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                  Multi-Factor Probability
+                </div>
+              </div>
+
+              {/* 4. Overall Verification Status */}
+              <div style={{ padding: 12, background: 'var(--bg-elevated)', borderRadius: 'var(--radius)', textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase' }}>
+                  Overall Status
+                </div>
+                <div style={{ marginTop: 4 }}>
+                  <span
+                    className={`badge ${verifStatus.className}`}
+                    style={{ fontSize: 11, padding: '4px 8px', fontWeight: 700 }}
+                  >
+                    {verifStatus.label}
+                  </span>
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
+                  Audited Decision State
+                </div>
+              </div>
+            </div>
+
+            {/* AI Verification Breakdown & Findings */}
+            {aiVerification ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/* Images Inspected Section */}
+                {aiVerification.image_details && aiVerification.image_details.length > 0 && (
+                  <div style={{ padding: 12, background: 'var(--bg-elevated)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <ImageIcon size={14} style={{ color: 'var(--primary-light)' }} />
+                      Image Evidence Forensic Inspection ({aiVerification.image_details.length} file{aiVerification.image_details.length > 1 ? 's' : ''})
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {aiVerification.image_details.map((img, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            padding: 10,
+                            background: 'var(--bg-surface)',
+                            borderRadius: 'var(--radius)',
+                            border: '1px solid var(--border)',
+                            fontSize: 12,
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                            <strong>{img.filename}</strong>
+                            <span
+                              className={`badge ${
+                                img.status === 'VERIFIED'
+                                  ? 'badge-green'
+                                  : img.status === 'SUSPICIOUS'
+                                  ? 'badge-red'
+                                  : 'badge-yellow'
+                              }`}
+                              style={{ fontSize: 10 }}
+                            >
+                              {img.status}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', gap: 16, color: 'var(--text-secondary)', flexWrap: 'wrap', fontSize: 11 }}>
+                            <span>Resolution: {img.resolution || 'Standard'}</span>
+                            <span>Blur Index (Laplacian): {img.blur_score !== undefined ? img.blur_score.toFixed(1) : 'OK'}</span>
+                            <span>Quality: {img.is_blurry ? '⚠️ High Blur Detected' : 'Clear'}</span>
+                            <span>Tampering Flags: {img.manipulation_signs && img.manipulation_signs.length > 0 ? '⚠️ Detected' : 'None detected'}</span>
+                          </div>
+                          {img.has_duplicate && (
+                            <div style={{ marginTop: 6, color: 'var(--danger)', fontWeight: 600, fontSize: 11 }}>
+                              ⚠️ Exact SHA-256 duplicate found in prior claim records
+                            </div>
+                          )}
+                          {img.damage_detected && (
+                            <div style={{ marginTop: 4, color: 'var(--text-primary)', fontSize: 11 }}>
+                              Damage Assessment: <strong>{img.damage_type || 'Visible damage'}</strong> • {img.relevant_to_incident ? 'Consistent with incident report' : 'Discrepancy with incident description'}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Documents Inspected Section */}
+                {aiVerification.document_details && aiVerification.document_details.length > 0 && (
+                  <div style={{ padding: 12, background: 'var(--bg-elevated)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <FileText size={14} style={{ color: '#38bdf8' }} />
+                      Document Text Extraction & Field Consistency ({aiVerification.document_details.length} file{aiVerification.document_details.length > 1 ? 's' : ''})
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {aiVerification.document_details.map((doc, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            padding: 10,
+                            background: 'var(--bg-surface)',
+                            borderRadius: 'var(--radius)',
+                            border: '1px solid var(--border)',
+                            fontSize: 12,
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                            <strong>{doc.filename}</strong>
+                            <span
+                              className={`badge ${
+                                doc.status === 'VERIFIED'
+                                  ? 'badge-green'
+                                  : doc.status === 'SUSPICIOUS'
+                                  ? 'badge-red'
+                                  : 'badge-yellow'
+                              }`}
+                              style={{ fontSize: 10 }}
+                            >
+                              {doc.status}
+                            </span>
+                          </div>
+
+                          {/* Field Matches */}
+                          {doc.matches && doc.matches.length > 0 && (
+                            <div style={{ fontSize: 11, color: 'var(--success)', margin: '4px 0' }}>
+                              ✓ Verified Matches: {doc.matches.join(', ')}
+                            </div>
+                          )}
+
+                          {doc.discrepancies && doc.discrepancies.length > 0 && (
+                            <div style={{ fontSize: 11, color: 'var(--warning)', margin: '4px 0' }}>
+                              ⚠️ Discrepancies: {doc.discrepancies.join(', ')}
+                            </div>
+                          )}
+
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', gap: 12, marginTop: 4 }}>
+                            <span>Method: {doc.ocr_method}</span>
+                            <span>Characters Extracted: {doc.extracted_length}</span>
+                          </div>
+
+                          {doc.has_duplicate && (
+                            <div style={{ marginTop: 4, color: 'var(--danger)', fontWeight: 600, fontSize: 11 }}>
+                              ⚠️ Duplicate document content hash matches prior claim records
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Detected Concerns & Missing Documents */}
+                {((aiVerification.detected_concerns && aiVerification.detected_concerns.length > 0) || (aiVerification.missing_documents && aiVerification.missing_documents.length > 0)) && (
+                  <div style={{ padding: 12, background: 'rgba(245, 158, 11, 0.08)', borderRadius: 'var(--radius)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                    {aiVerification.detected_concerns && aiVerification.detected_concerns.length > 0 && (
+                      <div style={{ marginBottom: 6 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--warning)', marginBottom: 2 }}>NOTED AI CONCERNS:</div>
+                        <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: 'var(--text-secondary)' }}>
+                          {aiVerification.detected_concerns.map((c, i) => (
+                            <li key={i}>{c}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {aiVerification.missing_documents && aiVerification.missing_documents.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--warning)', marginBottom: 2 }}>RECOMMENDED DOCUMENTS TO REQUEST:</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                          {aiVerification.missing_documents.join(', ')}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ padding: 20, textAlign: 'center', background: 'var(--bg-elevated)', borderRadius: 'var(--radius)' }}>
+                <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px 0' }}>
+                  No automated AI multi-modal verification has been executed on this claim yet.
+                </p>
+                <button
+                  onClick={handleRunAiVerification}
+                  disabled={runningVerification}
+                  className="btn btn-primary btn-sm"
+                >
+                  <Sparkles size={14} /> Run Initial AI Verification
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* AI Claim Summary & Risk Indicators */}
+          <div className="card">
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Shield size={18} style={{ color: 'var(--primary-light)' }} />
+                <div>
+                  <div className="card-title">Risk Scoring & Structured Summary</div>
+                  <div className="card-subtitle">Transparent decision support • Fallback-resilient</div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {risk && <span className={`badge ${risk.className}`}>{risk.label}</span>}
+                <button
+                  onClick={handleRunAiSummary}
+                  disabled={runningAi}
+                  className="btn btn-secondary btn-sm"
+                >
+                  <Sparkles size={13} />
+                  {runningAi ? 'Analyzing...' : 'Run Summary'}
+                </button>
+                <button
+                  onClick={handleRecalculateRisk}
+                  disabled={recalculatingRisk}
+                  className="btn btn-secondary btn-sm"
+                >
+                  <Shield size={13} />
+                  {recalculatingRisk ? 'Scoring...' : 'Evaluate Risk'}
+                </button>
               </div>
             </div>
 
@@ -658,11 +1176,11 @@ const OfficerClaimDetailPage: React.FC = () => {
           {/* Internal Notes History */}
           <div className="card">
             <div className="card-header">
-              <div className="card-title">Officer Internal Notes & Audit Logs</div>
+              <div className="card-title">Officer & Administrative Audit Trail</div>
             </div>
             {reviews.length === 0 ? (
               <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>
-                No internal review notes recorded yet.
+                No review notes or administrative actions recorded yet.
               </p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -830,7 +1348,7 @@ const OfficerClaimDetailPage: React.FC = () => {
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="button" onClick={() => setShowRejectModal(false)} className="btn btn-secondary">
+                <button type="button" onClick={() => setShowRejectModal(false)} className="btn btn-danger">
                   Cancel
                 </button>
                 <button
@@ -912,12 +1430,274 @@ const OfficerClaimDetailPage: React.FC = () => {
         </div>
       )}
 
+      {/* MODAL: Escalate to Admin */}
+      {showEscalateModal && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: 560 }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <AlertOctagon size={20} style={{ color: 'var(--warning)' }} />
+                <h3 className="modal-title">Escalate Claim to Administrator</h3>
+              </div>
+              <button onClick={() => setShowEscalateModal(false)} className="modal-close">&times;</button>
+            </div>
+            <form onSubmit={handleEscalateToAdmin}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div className="form-group">
+                  <label className="form-label required">Mandatory Escalation Reason</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="E.g., High fraud risk score, document alteration, or policy limit breach"
+                    value={escalateReason}
+                    onChange={(e) => setEscalateReason(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">AI Findings & Risk Summary</label>
+                  <textarea
+                    className="form-textarea"
+                    rows={2}
+                    placeholder="Summary of AI analysis and anomalies..."
+                    value={escalateAiFindings}
+                    onChange={(e) => setEscalateAiFindings(e.target.value)}
+                  />
+                </div>
+
+                {/* Evidence References Multi-Select */}
+                <div className="form-group">
+                  <label className="form-label">Attached Evidence References</label>
+                  {documents.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No file attachments currently uploaded.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 130, overflowY: 'auto' }}>
+                      {documents.map((d) => {
+                        const isSelected = escalateEvidenceRefs.includes(d.original_filename);
+                        return (
+                          <div
+                            key={d.id}
+                            onClick={() => toggleEvidenceRef(d.original_filename)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 8,
+                              padding: '6px 10px',
+                              background: isSelected ? 'rgba(99, 102, 241, 0.12)' : 'var(--bg-elevated)',
+                              border: isSelected ? '1px solid var(--primary-light)' : '1px solid var(--border)',
+                              borderRadius: 4,
+                              cursor: 'pointer',
+                              fontSize: 12,
+                            }}
+                          >
+                            {isSelected ? <CheckSquare size={14} style={{ color: 'var(--primary-light)' }} /> : <Square size={14} style={{ color: 'var(--text-muted)' }} />}
+                            <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {d.original_filename} ({d.document_category})
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Officer Additional Remarks</label>
+                  <textarea
+                    className="form-textarea"
+                    rows={3}
+                    placeholder="Provide specific notes and background for executive administrative review..."
+                    value={escalateRemarks}
+                    onChange={(e) => setEscalateRemarks(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" onClick={() => setShowEscalateModal(false)} className="btn btn-secondary">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-warning"
+                  disabled={submittingAction}
+                >
+                  {submittingAction ? 'Escalating...' : 'Confirm Escalation'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Mark for Manual Verification */}
+      {showManualReviewModal && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: 480 }}>
+            <div className="modal-header">
+              <h3 className="modal-title">Mark Claim for Manual Verification</h3>
+              <button onClick={() => setShowManualReviewModal(false)} className="modal-close">&times;</button>
+            </div>
+            <form onSubmit={handleMarkManualReview}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div className="form-group">
+                  <label className="form-label required">Reason for Manual Verification</label>
+                  <textarea
+                    className="form-textarea"
+                    rows={4}
+                    placeholder="Specify why automatic verification is insufficient and what requires manual inspection..."
+                    value={manualReviewReason}
+                    onChange={(e) => setManualReviewReason(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" onClick={() => setShowManualReviewModal(false)} className="btn btn-secondary">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={submittingAction}
+                >
+                  {submittingAction ? 'Updating...' : 'Mark for Manual Verification'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Admin Decision & Review */}
+      {showAdminDecisionModal && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: 540 }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Shield size={20} style={{ color: 'var(--primary-light)' }} />
+                <h3 className="modal-title">Executive Admin Decision</h3>
+              </div>
+              <button onClick={() => setShowAdminDecisionModal(false)} className="modal-close">&times;</button>
+            </div>
+            <form onSubmit={handleAdminDecision}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* Decision Action Tabs */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setAdminDecisionAction('APPROVE')}
+                    className={`btn ${adminDecisionAction === 'APPROVE' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={adminDecisionAction === 'APPROVE' ? { background: 'var(--success)', borderColor: 'var(--success)' } : {}}
+                  >
+                    <CheckCircle size={14} /> Approve
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminDecisionAction('REJECT')}
+                    className={`btn ${adminDecisionAction === 'REJECT' ? 'btn-danger' : 'btn-secondary'}`}
+                  >
+                    <XCircle size={14} /> Reject
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminDecisionAction('RETURN_TO_OFFICER')}
+                    className={`btn ${adminDecisionAction === 'RETURN_TO_OFFICER' ? 'btn-warning' : 'btn-secondary'}`}
+                  >
+                    <CornerDownLeft size={14} /> Return to Officer
+                  </button>
+                </div>
+
+                {/* Sub-forms depending on action */}
+                {adminDecisionAction === 'APPROVE' && (
+                  <>
+                    <div className="form-group">
+                      <label className="form-label required">Approved Amount (₹)</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={adminApprovedAmount}
+                        onChange={(e) => setAdminApprovedAmount(e.target.value)}
+                        min="1"
+                        step="100"
+                        required
+                      />
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, display: 'block' }}>
+                        Requested: {formatCurrency(claim.requested_amount)}
+                      </span>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label required">Admin Approval Remarks</label>
+                      <textarea
+                        className="form-textarea"
+                        rows={3}
+                        placeholder="State administrative justification and policy terms for settlement..."
+                        value={adminApprovalNotes}
+                        onChange={(e) => setAdminApprovalNotes(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </>
+                )}
+
+                {adminDecisionAction === 'REJECT' && (
+                  <div className="form-group">
+                    <label className="form-label required">Mandatory Rejection Reason</label>
+                    <textarea
+                      className="form-textarea"
+                      rows={4}
+                      placeholder="Specify fraud findings, fraudulent claims clauses, or policy violations..."
+                      value={adminRejectionReason}
+                      onChange={(e) => setAdminRejectionReason(e.target.value)}
+                      required
+                    />
+                  </div>
+                )}
+
+                {adminDecisionAction === 'RETURN_TO_OFFICER' && (
+                  <div className="form-group">
+                    <label className="form-label required">Instructions for Claim Officer</label>
+                    <textarea
+                      className="form-textarea"
+                      rows={4}
+                      placeholder="Provide specific investigation directions, required documents, or re-inspection guidance..."
+                      value={adminReturnInstructions}
+                      onChange={(e) => setAdminReturnInstructions(e.target.value)}
+                      required
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button type="button" onClick={() => setShowAdminDecisionModal(false)} className="btn btn-secondary">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={
+                    adminDecisionAction === 'APPROVE'
+                      ? { background: 'var(--success)', borderColor: 'var(--success)' }
+                      : adminDecisionAction === 'REJECT'
+                      ? { background: 'var(--danger)', borderColor: 'var(--danger)' }
+                      : { background: 'var(--warning)', borderColor: 'var(--warning)', color: '#000' }
+                  }
+                  disabled={submittingAction}
+                >
+                  {submittingAction ? 'Processing...' : `Confirm ${adminDecisionAction.replace(/_/g, ' ')}`}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: Internal Note */}
       {showNoteModal && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 480 }}>
             <div className="modal-header">
-              <h3 className="modal-title">Add Internal Officer Note</h3>
+              <h3 className="modal-title">Add Internal Note</h3>
               <button onClick={() => setShowNoteModal(false)} className="modal-close">&times;</button>
             </div>
             <form onSubmit={handleAddNote}>
@@ -927,7 +1707,7 @@ const OfficerClaimDetailPage: React.FC = () => {
                   <textarea
                     className="form-textarea"
                     rows={4}
-                    placeholder="Enter notes visible only to claim officers and administrators..."
+                    placeholder="Enter audit note visible to officers and administrators..."
                     value={internalNote}
                     onChange={(e) => setInternalNote(e.target.value)}
                     required
