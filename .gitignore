@@ -14,8 +14,18 @@ frontend/.env
 # Databases and storage
 backend/pgdata/
 backend/uploads/
+uploads/
 *.sqlite3
 *.db
+
+# Reports and temporary files
+*.zip
+*.docx
+*.pdf
+Insurance_Claim_Report_Files/
+report_generator/
+create_report_package.py
+extracted_logo_*.jpeg
 
 # Build outputs
 frontend/dist/

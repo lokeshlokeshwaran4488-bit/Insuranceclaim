@@ -1,29 +1,40 @@
-# InsureClaim AI — Backend API Service
+# InsureClaim AI — MERN Stack Backend API Service
 
-FastAPI asynchronous backend powering the AI-Powered Insurance Claim Processing System.
+Express.js and Node.js REST API backend powering the AI-Powered Insurance Claim Processing and Settlement Management System using **MongoDB and Mongoose exclusively**.
 
-## Architecture & Databases
-- **PostgreSQL 18** (`backend/pgdata` cluster on port 5433 or standard port 5432): Manages core relational business records (`users`, `policies`, `claims`, `claim_timeline`, `settlements`, `audit_logs`).
-- **MongoDB 8.0** (`mongodb://localhost:27017` / database `insurance_claims_docs`): Manages document upload metadata, binary SHA-256 content hashes, AI structured summaries, and multi-factor preliminary risk evaluations.
+## Architecture & Database
+- **Database**: MongoDB (`mongodb://127.0.0.1:27017/insurance_claims`) via Mongoose ODM.
+- **Backend Framework**: Express.js on Node.js 22.
+- **Authentication**: JWT authentication with `bcryptjs` password hashing.
+- **Storage**: Multer file uploads with SHA-256 integrity checks.
+- **Real-time**: WebSockets (`/ws/:userId`) for live notifications.
+- **AI Verification**: Integrated multi-point document and image verification engine with explainability metrics.
 
-## Running on Windows
+## Running on Local Machine
 
-1. Ensure PostgreSQL is running on port 5433:
+1. Ensure MongoDB service is running on `127.0.0.1:27017`.
+2. Install dependencies:
    ```powershell
-   & "C:\Program Files\PostgreSQL\18\bin\postgres.exe" -D ".\pgdata" -p 5433
+   npm install
    ```
-2. Ensure MongoDB service is running on `127.0.0.1:27017`.
 3. Seed database:
    ```powershell
-   python scripts/seed_data.py
+   node scripts/seedData.js
    ```
 4. Start development server:
    ```powershell
-   python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+   node server.js
    ```
+   Server runs on `http://localhost:5000`.
 
 ## Running Automated Tests
 ```powershell
-python -m pytest tests -v
+npm test
 ```
-All 17 automated tests verify database connectivity, health checks, authentication, RBAC authorization, claim lifecycle workflows, document security, and CSV formula injection sanitization.
+All automated tests verify:
+- Health checks (MongoDB only, no SQL/PostgreSQL)
+- Authentication & RBAC for Admin, Officer, and Customer
+- Customer claim lifecycle (draft, submission, timeline, uploads)
+- Officer review, document requests, and AI verification
+- Admin clarification, approval, and settlement processing
+- Analytics dashboards, audit logs, and CSV report exports with formula injection sanitization.

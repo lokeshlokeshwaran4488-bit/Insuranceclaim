@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-let rawBaseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8000').trim();
+let rawBaseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5000').trim();
 if (rawBaseUrl && !rawBaseUrl.startsWith('http://') && !rawBaseUrl.startsWith('https://')) {
   rawBaseUrl = `https://${rawBaseUrl}`;
 }
