@@ -65,4 +65,4 @@ The repository includes a ready-to-use [`render.yaml`](./render.yaml) blueprint 
 - **Build Command**: `cd frontend && npm install && npm run build`
 - **Publish Directory**: `dist`
 - **Environment Variables**:
-  - `VITE_API_URL`: `https://insureclaim-backend.onrender.com`
+  - `VITE_API_URL`: `https://insuranceclaim-m0ij.onrender.com`
