@@ -6,22 +6,22 @@ services:
     rootDir: backend
     plan: free
     region: oregon
-    buildCommand: npm install
-    startCommand: node server.js
+    buildCommand: npm ci
+    startCommand: npm start
     healthCheckPath: /api/health
     envVars:
       - key: APP_NAME
         value: InsureClaim AI
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: "5000"
       - key: JWT_SECRET
+        generateValue: true
+      - key: AES_ENCRYPTION_KEY
         generateValue: true
       - key: MONGODB_URI
         sync: false
       - key: CLIENT_URL
-        value: "*"
+        value: https://insureclaim-frontend.onrender.com
       - key: UPLOAD_DIR
         value: ./uploads
       - key: MAX_FILE_SIZE_MB
@@ -38,7 +38,7 @@ services:
     name: insureclaim-frontend
     runtime: static
     rootDir: frontend
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci && npm run build
     staticPublishPath: dist
     routes:
       - type: rewrite

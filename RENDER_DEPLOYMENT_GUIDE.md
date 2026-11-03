@@ -53,16 +53,21 @@ The repository includes a ready-to-use [`render.yaml`](./render.yaml) blueprint 
 
 ### Service 1: Node.js Express Backend
 - **Environment**: Node.js
-- **Build Command**: `cd backend && npm install`
-- **Start Command**: `cd backend && node server.js`
+- **Root Directory**: `backend`
+- **Build Command**: `npm ci`
+- **Start Command**: `npm start`
+- **Health Check Path**: `/api/health`
 - **Environment Variables**:
-  - `PORT`: `5000`
-  - `MONGODB_URI`: `mongodb+srv://...`
-  - `JWT_SECRET`: Secure 32+ character secret
   - `NODE_ENV`: `production`
+  - `CLIENT_URL`: `https://insureclaim-frontend.onrender.com`
+  - `MONGODB_URI`: `mongodb+srv://...` (your MongoDB Atlas connection string)
+  - `JWT_SECRET`: Secure 32+ character secret
+  - `AES_ENCRYPTION_KEY`: 32-character key for data encryption
 
 ### Service 2: React Frontend Static Site
-- **Build Command**: `cd frontend && npm install && npm run build`
+- **Environment**: Static Site
+- **Root Directory**: `frontend`
+- **Build Command**: `npm ci && npm run build`
 - **Publish Directory**: `dist`
 - **Environment Variables**:
   - `VITE_API_URL`: `https://insuranceclaim-m0ij.onrender.com`
