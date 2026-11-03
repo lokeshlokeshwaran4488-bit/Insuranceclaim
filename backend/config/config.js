@@ -41,7 +41,7 @@ if (isProd) {
   }
 }
 
-const mongoUri = normalizeMongoUri(rawMongoUri, 'insurance_claims');
+const mongoUri = normalizeMongoUri(rawMongoUri, process.env.MONGODB_DB_NAME || 'insurance_claims');
 
 const config = {
   appName: process.env.APP_NAME || 'InsureClaim AI',
@@ -50,7 +50,7 @@ const config = {
   port: parseInt(process.env.PORT, 10) || 5000,
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
   mongoUri,
-  dbName: 'insurance_claims',
+  dbName: process.env.MONGODB_DB_NAME || 'insurance_claims',
   jwtSecret: process.env.JWT_SECRET || 'super_secret_insureclaim_jwt_development_key_32_chars_min',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '1d',
   refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '7d',

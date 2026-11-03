@@ -66,3 +66,13 @@ module.exports = {
   getDbHealth,
   mongoose
 };
+
+// Connection lifecycle event listeners
+mongoose.connection.on('error', (err) => {
+  console.error(`[MongoDB] Runtime database error: ${err.message}`);
+});
+
+mongoose.connection.on('disconnected', () => {
+  isConnected = false;
+  console.warn('[MongoDB] Database disconnected');
+});
