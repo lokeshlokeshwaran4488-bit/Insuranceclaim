@@ -21,7 +21,7 @@ services:
       - key: MONGODB_URI
         sync: false
       - key: CLIENT_URL
-        value: https://insureclaim-frontend.onrender.com
+        value: https://insureclaim-frontend-swc9.onrender.com
       - key: UPLOAD_DIR
         value: ./uploads
       - key: MAX_FILE_SIZE_MB
@@ -46,4 +46,4 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        value: https://insuranceclaim-m0ij.onrender.com
+        value: https://insureclaim-backend-swc9.onrender.com

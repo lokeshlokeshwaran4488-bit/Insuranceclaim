@@ -59,7 +59,7 @@ The repository includes a ready-to-use [`render.yaml`](./render.yaml) blueprint 
 - **Health Check Path**: `/api/health`
 - **Environment Variables**:
   - `NODE_ENV`: `production`
-  - `CLIENT_URL`: `https://insureclaim-frontend.onrender.com`
+  - `CLIENT_URL`: `https://insureclaim-frontend-swc9.onrender.com`
   - `MONGODB_URI`: `mongodb+srv://...` (your MongoDB Atlas connection string)
   - `JWT_SECRET`: Secure 32+ character secret
   - `AES_ENCRYPTION_KEY`: 32-character key for data encryption
@@ -70,4 +70,4 @@ The repository includes a ready-to-use [`render.yaml`](./render.yaml) blueprint 
 - **Build Command**: `npm ci && npm run build`
 - **Publish Directory**: `dist`
 - **Environment Variables**:
-  - `VITE_API_URL`: `https://insuranceclaim-m0ij.onrender.com`
+  - `VITE_API_URL`: `https://insureclaim-backend-swc9.onrender.com`

@@ -48,7 +48,7 @@ const config = {
   version: '2.0.0',
   env,
   port: parseInt(process.env.PORT, 10) || 5000,
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
+  clientUrl: process.env.CLIENT_URL || 'https://insureclaim-frontend-swc9.onrender.com',
   mongoUri,
   dbName: process.env.MONGODB_DB_NAME || 'insurance_claims',
   jwtSecret: process.env.JWT_SECRET || 'super_secret_insureclaim_jwt_development_key_32_chars_min',
@@ -69,6 +69,8 @@ const config = {
     'http://127.0.0.1:3000',
     'http://localhost:5000',
     'http://127.0.0.1:5000',
+    'https://insureclaim-frontend-swc9.onrender.com',
+    'https://insureclaim-frontend.onrender.com',
     ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL] : [])
   ]
 };
