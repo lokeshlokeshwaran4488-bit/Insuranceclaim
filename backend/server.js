@@ -110,8 +110,8 @@ async function startServer() {
   try {
     await connectDB();
     server.listen(config.port, '0.0.0.0', () => {
-      console.log(`[${config.appName}] Server running on http://localhost:${config.port}`);
       console.log(`[${config.appName}] Environment: ${config.env}`);
+      console.log(`[${config.appName}] Server running on port ${config.port}`);
     });
   } catch (err) {
     console.error(`Failed to start server: ${err.message}`);
